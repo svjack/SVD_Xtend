@@ -6,6 +6,154 @@
 
 **Stable Video Diffusion Training Code and Extensions 🚀**
 
+
+# SVD_Xtend Project Documentation
+
+## Introduction
+This document outlines the steps to set up and run the SVD_Xtend project, which involves training and inference using the Stable Video Diffusion model. The process includes setting up the environment, downloading datasets, training the model, and performing inference.
+
+## Environment Setup
+
+### Create and Activate Conda Environment
+```bash
+conda create --name py310 python=3.10
+conda activate py310
+pip install ipykernel
+python -m ipykernel install --user --name py310 --display-name "py310"
+```
+
+### Install Required Packages
+```bash
+sudo apt-get update
+sudo apt-get install git-lfs ffmpeg cbm
+pip install -U diffusers transformers accelerate huggingface_hub torch peft sentencepiece "httpx[socks]" opencv-python einops
+```
+
+## Dataset Preparation
+
+### Clone the Repository and Download Dataset
+```bash
+git clone https://github.com/pixeli99/SVD_Xtend
+cd SVD_Xtend
+wget http://dl.yf.io/bdd100k/mot20/images20-track-train-1.zip
+unzip images20-track-train-1.zip
+```
+
+### Verify Dataset Structure
+```python
+from train_svd_lora import *
+!ls bdd100k/images/track/train
+!ls bdd100k/images/track/train/0000f77c-6257be58/
+```
+
+## Visualization
+
+### Convert Video Frames to GIF
+```python
+folder_path = "bdd100k/images/track/train/0000f77c-6257be58/"
+frames = os.listdir(folder_path)
+frames.sort()
+from PIL import Image
+export_to_gif(list(map(lambda x: Image.open(os.path.join(folder_path, x)), frames)), "0000f77c-6257be58.gif", fps=1)
+from IPython import display
+display.Image("0000f77c-6257be58.gif")
+```
+
+## Training
+
+### Login to Hugging Face
+```bash
+huggingface-cli login
+```
+
+### Launch Training
+```bash
+accelerate launch train_svd_lora.py \
+--base_folder bdd100k/images/track/train \
+--pretrained_model_name_or_path=stabilityai/stable-video-diffusion-img2vid-xt-1-1 \
+--per_gpu_batch_size=1 --gradient_accumulation_steps=1 \
+--max_train_steps=100 \
+--width=512 \
+--height=320 \
+--checkpointing_steps=50 --checkpoints_total_limit=5 \
+--learning_rate=1e-5 --lr_warmup_steps=0 \
+--seed=123 \
+--mixed_precision="fp16" \
+--validation_steps=20
+```
+
+## Inference
+
+### Inference on Original Model
+```python
+import torch
+from diffusers import UNetSpatioTemporalConditionModel, StableVideoDiffusionPipeline
+from diffusers.utils import load_image, export_to_video, export_to_gif
+
+pipe = StableVideoDiffusionPipeline.from_pretrained(
+    "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
+    low_cpu_mem_usage=False,
+    torch_dtype=torch.float16, variant="fp16", local_files_only=True,
+)
+pipe.to("cuda:0")
+
+image = load_image('bdd100k/images/track/train/0000f77c-6257be58/0000f77c-6257be58-0000001.jpg')
+image = image.resize((1024, 576))
+
+generator = torch.manual_seed(-1)
+with torch.inference_mode():
+    frames = pipe(image,
+                num_frames=14,
+                width=1024,
+                height=576,
+                decode_chunk_size=8, generator=generator, motion_bucket_id=127, fps=8, num_inference_steps=30).frames[0]
+
+export_to_gif(frames, "0000f77c-6257be58-0000001_generated_ori.gif", fps=7)
+from IPython import display
+display.Image("0000f77c-6257be58-0000001_generated_ori.gif")
+```
+
+### Inference on LoRA-Tuned UNet
+```python
+import torch
+from diffusers import UNetSpatioTemporalConditionModel, StableVideoDiffusionPipeline
+from diffusers.utils import load_image, export_to_video, export_to_gif
+
+unet = UNetSpatioTemporalConditionModel.from_pretrained(
+    "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
+    subfolder="unet",
+    torch_dtype=torch.float16,
+    low_cpu_mem_usage=False,
+)
+lora_folder = "outputs/pytorch_lora_weights.safetensors"
+unet.load_attn_procs(lora_folder)
+unet.to(torch.float16)
+unet.requires_grad_(False)
+
+pipe = StableVideoDiffusionPipeline.from_pretrained(
+    "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
+    unet=unet,
+    low_cpu_mem_usage=False,
+    torch_dtype=torch.float16, variant="fp16", local_files_only=True,
+)
+pipe.to("cuda:0")
+
+image = load_image('bdd100k/images/track/train/0000f77c-6257be58/0000f77c-6257be58-0000001.jpg')
+image = image.resize((1024, 576))
+
+generator = torch.manual_seed(-1)
+with torch.inference_mode():
+    frames = pipe(image,
+                num_frames=14,
+                width=1024,
+                height=576,
+                decode_chunk_size=8, generator=generator, motion_bucket_id=127, fps=8, num_inference_steps=30).frames[0]
+export_to_gif(frames, "0000f77c-6257be58-0000001_generated_lora.gif", fps=7)
+from IPython import display
+display.Image("0000f77c-6257be58-0000001_generated_lora.gif")
+```
+
+
 ## :bulb: Highlight
 
 - **Finetuning SVD.** See [Part 1](#part-1-training).
