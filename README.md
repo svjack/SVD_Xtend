@@ -153,6 +153,120 @@ from IPython import display
 display.Image("0000f77c-6257be58-0000001_generated_lora.gif")
 ```
 
+<!--
+
+import torch
+from diffusers import UNetSpatioTemporalConditionModel, StableVideoDiffusionPipeline
+from diffusers.utils import load_image, export_to_video, export_to_gif
+
+pipe = StableVideoDiffusionPipeline.from_pretrained(
+    "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
+    #unet=unet,
+    low_cpu_mem_usage=False,
+    torch_dtype=torch.float16, variant="fp16", local_files_only=True,
+)
+pipe.to("cuda:0")
+image = load_image('demo.jpg')
+image = image.resize((512, 320))
+
+generator = torch.manual_seed(-1)
+with torch.inference_mode():
+    frames = pipe(image,
+                num_frames=14,
+                width=512,
+                height=320,
+                decode_chunk_size=8, generator=generator, motion_bucket_id=127, fps=8, num_inference_steps=30,
+                #noise_aug_strength=0.02,
+                 ).frames[0]
+
+export_to_gif(frames, "demo-ori.gif", fps=7)
+from IPython import display
+display.Image("demo-ori.gif")
+
+import torch
+from diffusers import UNetSpatioTemporalConditionModel, StableVideoDiffusionPipeline
+from diffusers.utils import load_image, export_to_video, export_to_gif
+unet = UNetSpatioTemporalConditionModel.from_pretrained(
+    "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
+    subfolder="unet",
+    torch_dtype=torch.float16,
+    low_cpu_mem_usage=False,
+)
+###lora_folder = "outputs/pytorch_lora_weights.safetensors"
+lora_folder = "outputs/checkpoint-50/"
+unet.load_attn_procs(lora_folder)
+unet.to(torch.float16)
+unet.requires_grad_(False)
+
+pipe = StableVideoDiffusionPipeline.from_pretrained(
+    "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
+    unet=unet,
+    low_cpu_mem_usage=False,
+    torch_dtype=torch.float16, variant="fp16", local_files_only=True,
+)
+pipe.to("cuda:0")
+image = load_image('demo.jpg')
+image = image.resize((512, 320))
+
+generator = torch.manual_seed(-1)
+with torch.inference_mode():
+    frames = pipe(image,
+                num_frames=14,
+                width=512,
+                height=320,
+                decode_chunk_size=8, generator=generator, motion_bucket_id=127, fps=8, num_inference_steps=30,
+                #noise_aug_strength=0.02,
+                 ).frames[0]
+
+export_to_gif(frames, "demo-lora.gif", fps=7)
+from IPython import display
+display.Image("demo-lora.gif")
+
+from PIL import Image, ImageSequence
+
+def horizontal_concatenate_gifs(gif1_path, gif2_path, output_path):
+    # 打开两个GIF文件
+    gif1 = Image.open(gif1_path)
+    gif2 = Image.open(gif2_path)
+
+    # 获取两个GIF的帧数和帧率
+    frames1 = [frame.copy() for frame in ImageSequence.Iterator(gif1)]
+    frames2 = [frame.copy() for frame in ImageSequence.Iterator(gif2)]
+
+    # 确保两个GIF的帧数相同，否则无法拼接
+    if len(frames1) != len(frames2):
+        raise ValueError("两个GIF的帧数不一致，无法拼接")
+
+    # 创建一个新的GIF帧列表
+    new_frames = []
+
+    for frame1, frame2 in zip(frames1, frames2):
+        # 获取两个帧的尺寸
+        width1, height1 = frame1.size
+        width2, height2 = frame2.size
+
+        # 创建一个新的空白图像，宽度为两个帧的宽度之和，高度为两个帧的最大高度
+        new_frame = Image.new('RGBA', (width1 + width2, max(height1, height2)))
+
+        # 将两个帧分别粘贴到新的图像上
+        new_frame.paste(frame1, (0, 0))
+        new_frame.paste(frame2, (width1, 0))
+
+        # 将新的帧添加到帧列表中
+        new_frames.append(new_frame)
+
+    # 保存新的GIF文件
+    new_frames[0].save(output_path, save_all=True, append_images=new_frames[1:], loop=0, duration=gif1.info['duration'])
+
+
+# 示例用法
+gif1_path = 'demo-ori.gif'
+gif2_path = 'demo-lora.gif'
+output_path = 'demo-ori-lora.gif'
+
+horizontal_concatenate_gifs(gif1_path, gif2_path, output_path)
+
+-->
 
 ## :bulb: Highlight
 
