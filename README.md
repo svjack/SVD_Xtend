@@ -33,7 +33,7 @@ pip install -U diffusers transformers accelerate huggingface_hub torch peft sent
 
 ### Clone the Repository and Download Dataset
 ```bash
-git clone https://github.com/pixeli99/SVD_Xtend
+git clone https://github.com/svjack/SVD_Xtend
 cd SVD_Xtend
 wget http://dl.yf.io/bdd100k/mot20/images20-track-train-1.zip
 unzip images20-track-train-1.zip
