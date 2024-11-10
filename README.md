@@ -268,6 +268,160 @@ horizontal_concatenate_gifs(gif1_path, gif2_path, output_path)
 
 -->
 
+# Genshin Impact building Example
+
+## Overview
+This README provides instructions and code snippets for training and generating video frames using the Stable Video Diffusion model, specifically focusing on the process of fine-tuning with LoRA (Low-Rank Adaptation). Additionally, it includes insights and adjustments for enhancing the dynamic intensity of generated videos.
+
+## Preparing the Dataset (From https://github.com/svjack/katna )
+1. Copy the initial frame image to a demo file:
+   ```bash
+   cp ../genshin_frame_V2/BV12YDaYME9Z_interval_videos_interval_0_folder_0/frame_000000.png demo.jpg
+   ```
+
+## Training Command
+The following command is used to train the model with default LoRA rank set to 4:
+```bash
+accelerate launch train_svd_lora.py \
+--base_folder ../genshin_frame_V2_tgt \
+--pretrained_model_name_or_path=stabilityai/stable-video-diffusion-img2vid-xt-1-1 \
+--per_gpu_batch_size=1 --gradient_accumulation_steps=1 \
+--max_train_steps=1000 \
+--width=512 \
+--height=320 \
+--checkpointing_steps=100 --checkpoints_total_limit=10 \
+--learning_rate=1e-5 --lr_warmup_steps=0 \
+--seed=123 \
+--mixed_precision="fp16" \
+--validation_steps=100
+```
+
+## Displaying Images
+To display an image in a Jupyter notebook:
+```python
+from IPython import display
+display.Image("莫娜.png")
+```
+
+![莫娜](https://github.com/user-attachments/assets/3027d861-b2aa-401f-a210-3136002f48fb)
+
+
+## Results Before Fine-Tuning
+### Code Snippet
+```python
+import torch
+from diffusers import UNetSpatioTemporalConditionModel, StableVideoDiffusionPipeline
+from diffusers.utils import load_image, export_to_video, export_to_gif
+
+pipe = StableVideoDiffusionPipeline.from_pretrained(
+    "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
+    low_cpu_mem_usage=False,
+    torch_dtype=torch.float16, variant="fp16", local_files_only=True,
+)
+pipe.to("cuda:0")
+print("Done")
+
+image = load_image('莫娜.png')
+image = image.resize((1024, 576))
+
+generator = torch.manual_seed(-1)
+with torch.inference_mode():
+    frames = pipe(image,
+                num_frames=14,
+                width=1024,
+                height=576,
+                decode_chunk_size=8, generator=generator, fps=8, num_inference_steps=30).frames[0]
+
+export_to_gif(frames, "demo_generated_ori.gif")
+from IPython import display
+display.Image("demo_generated_ori.gif")
+```
+
+
+![demo_generated_ori](https://github.com/user-attachments/assets/b9044a41-2eb1-4469-afed-1f6ab4b8e65d)
+
+## Results After Fine-Tuning
+### Code Snippet
+```python
+import torch
+from diffusers import UNetSpatioTemporalConditionModel, StableVideoDiffusionPipeline
+from diffusers.utils import load_image, export_to_video, export_to_gif
+
+unet = UNetSpatioTemporalConditionModel.from_pretrained(
+    "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
+    subfolder="unet",
+    torch_dtype=torch.float16,
+    low_cpu_mem_usage=False,
+)
+lora_folder = "outputs/checkpoint-200/"
+lora_folder = "outputs/"
+unet.load_attn_procs(lora_folder)
+unet.to(torch.float16)
+unet.requires_grad_(False)
+
+pipe = StableVideoDiffusionPipeline.from_pretrained(
+    "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
+    unet=unet,
+    low_cpu_mem_usage=False,
+    torch_dtype=torch.float16, variant="fp16", local_files_only=True,
+)
+pipe.to("cuda:0")
+print("Done")
+
+image = load_image('莫娜.png')
+image = image.resize((1024, 576))
+
+generator = torch.manual_seed(-1)
+with torch.inference_mode():
+    frames = pipe(image,
+                num_frames=14,
+                width=1024,
+                height=576,
+                decode_chunk_size=8, generator=generator, fps=8, num_inference_steps=30).frames[0]
+
+export_to_gif(frames, "demo_generated_lora.gif")
+from IPython import display
+display.Image("demo_generated_lora.gif")
+```
+
+![demo_generated_lora](https://github.com/user-attachments/assets/00dd34a0-9ba3-482b-86a5-d7f1739437f8)
+
+
+## Enhancing Dynamic Intensity
+### Insights from [Issue #56](https://github.com/pixeli99/SVD_Xtend/issues/56)
+- **Original Model Dynamics**: The original model also has instances of static frames, indicating that static frames are not solely due to training. However, training with LoRA tends to stabilize the generated images.
+- **`noise_aug_strength`**:
+  - **Default Value**: 0.02
+  - **Effect**: Increasing this value (e.g., to 0.5) can introduce more motion but may have side effects.
+- **`motion_bucket_id`**:
+  - **Default Value**: 127
+  - **Effect**: Higher values increase the amount of motion in the video.
+- **Checkpoint Analysis**:
+  - **Observation**: Step 100 results in less static frames compared to Step 1000, especially for frames that were dynamic before fine-tuning.
+
+### Parameters for Dynamic Intensity
+1. **`motion_bucket_id`**:
+   - **Effect**: Controls the amount of motion in the video. Higher values increase motion.
+   - **Default**: 127
+2. **`noise_aug_strength`**:
+   - **Effect**: Controls the noise added to the initial image. Higher values increase dynamic intensity.
+   - **Default**: 0.02
+3. **`num_frames`**:
+   - **Effect**: Number of frames in the generated video. More frames may increase dynamic intensity.
+   - **Default**: Depends on model configuration (14 or 25)
+4. **`fps`**:
+   - **Effect**: Frames per second. Higher values may increase dynamic intensity.
+   - **Default**: 7
+5. **`num_inference_steps`**:
+   - **Effect**: Number of denoising steps. More steps may increase dynamic intensity.
+   - **Default**: 25
+
+### Summary
+- **`motion_bucket_id`** and **`noise_aug_strength`** directly influence dynamic intensity.
+- **`num_frames`**, **`fps`**, and **`num_inference_steps`** may indirectly influence dynamic intensity.
+
+To increase the dynamic intensity of generated videos, consider increasing the values of `motion_bucket_id` and `noise_aug_strength`.
+
 ## :bulb: Highlight
 
 - **Finetuning SVD.** See [Part 1](#part-1-training).
